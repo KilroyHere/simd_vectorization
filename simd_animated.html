@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vertical Vectorization — Animated</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Source+Sans+3:wght@400;600;700;800&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --red:       #B31B1B;
+  --dark-red:  #8A1515;
+  --white:     #FFFFFF;
+  --off-white: #F8F8F8;
+  --lt-gray:   #EBEBEB;
+  --mid-gray:  #888888;
+  --dk-gray:   #2A2A2A;
+
+  --match-bg:  #EBF7EC; --match-fg: #1B5E20; --match-bd: #43A047;
+  --empty-bg:  #F5F5F5; --empty-fg: #9E9E9E; --empty-bd: #BDBDBD;
+  --col-bg:    #FFF8E1; --col-fg:   #E65100; --col-bd:   #FFA726;
+  --out-bg:    #FFF3E0; --out-fg:   #B31B1B; --out-bd:   #FFA726;
+  --pos-bg:    #E8EAF6; --pos-fg:   #283593; --pos-bd:   #3949AB;
+  --key-bg:    #E3F2FD; --key-fg:   #0D47A1; --key-bd:   #1E88E5;
+  --off-bg:    #F3E5F5; --off-fg:   #6A1B9A; --off-bd:   #8E24AA;
+  --car-bg:    #FEEFEF; --car-fg:   #8A1515; --car-bd:   #B31B1B;
+}
+
+body {
+  font-family: 'Source Sans 3', sans-serif;
+  background: #1A1A1A;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.outer {
+  width: 1200px;
+  background: var(--white);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+/* ── HEADER ── */
+.header {
+  background: var(--red);
+  padding: 0 28px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header h1 { color: var(--white); font-size: 18px; font-weight: 700; }
+.header-right { display: flex; align-items: center; gap: 14px; }
+.iter-badge {
+  background: var(--dark-red);
+  color: var(--white);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 700;
+  padding: 4px 10px; border-radius: 4px;
+  letter-spacing: 0.05em;
+  min-width: 80px; text-align: center;
+}
+
+/* ── PROGRESS BAR ── */
+.progress-row {
+  background: #F0F0F0;
+  padding: 10px 28px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.prog-step {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--lt-gray);
+  transition: background 0.4s;
+}
+.prog-step.done    { background: var(--red); }
+.prog-step.current { background: #E57373; }
+
+/* ── STEP PILLS ── */
+.step-pills {
+  display: flex;
+  gap: 8px;
+  padding: 8px 28px;
+  background: #FAFAFA;
+  border-bottom: 1px solid var(--lt-gray);
+}
+.pill {
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 12px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1.5px solid var(--lt-gray);
+  color: var(--mid-gray);
+  background: var(--white);
+  transition: all 0.3s;
+}
+.pill.active { color: var(--white); border-color: transparent; }
+.pill.p1.active { background: var(--pos-fg); }
+.pill.p2.active { background: var(--red); }
+.pill.p3.active { background: var(--col-fg); }
+
+/* ── DIAGRAM GRID ── */
+.diagram {
+  display: grid;
+  grid-template-columns: 128px repeat(4, 1fr);
+  row-gap: 0;
+  column-gap: 8px;
+  padding: 14px 24px 8px 24px;
+}
+
+.row-label {
+  display: flex; align-items: center; justify-content: flex-end;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700;
+  color: var(--dk-gray);
+  padding-right: 10px;
+  height: 48px;
+}
+.slot-lbl {
+  display: flex; align-items: flex-end; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 600;
+  color: var(--mid-gray);
+  padding-bottom: 4px;
+  height: 24px;
+}
+.note-label { height: 28px; display: flex; align-items: center; justify-content: flex-end;
+  font-size: 11px; color: var(--mid-gray); padding-right: 10px; }
+.note-cell {
+  height: 28px; display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.3;
+  transition: color 0.4s;
+}
+.note-cell.retry  { color: var(--col-fg); font-weight: 600; }
+.note-cell.normal { color: var(--mid-gray); font-style: italic; }
+
+/* ── CELLS ── */
+.cell {
+  height: 48px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; font-weight: 700;
+  border: 1.5px solid transparent;
+  transition: all 0.35s ease;
+  opacity: 0.25;
+}
+.cell.show { opacity: 1; }
+.cell.highlight { box-shadow: 0 0 0 3px rgba(179,27,27,0.35); transform: scale(1.03); }
+
+.cell.key  { background: var(--key-bg); color: var(--key-fg); border-color: var(--key-bd); }
+.cell.off  { background: var(--off-bg); color: var(--off-fg); border-color: var(--off-bd); }
+.cell.off.carried { background: var(--car-bg); color: var(--car-fg); border-color: var(--car-bd); }
+.cell.key.carried { background: var(--car-bg); color: var(--car-fg); border-color: var(--car-bd); }
+.cell.pos  { background: var(--pos-bg); color: var(--pos-fg); border-color: var(--pos-bd); }
+.cell.mat  { background: var(--match-bg); color: var(--match-fg); border-color: var(--match-bd); }
+.cell.emp  { background: var(--empty-bg); color: var(--empty-fg); border-color: var(--empty-bd); }
+.cell.col  { background: var(--col-bg);   color: var(--col-fg);   border-color: var(--col-bd); }
+.cell.out  { background: var(--out-bg);   color: var(--out-fg);   border-color: var(--out-bd); }
+.cell.blank{ background: var(--off-white);color: var(--empty-bd); border-color: var(--lt-gray); }
+
+/* ── STEP BARS ── */
+.step-spacer { height: 34px; display: flex; align-items: center; justify-content: flex-end;
+  font-size: 11px; color: var(--mid-gray); padding-right: 10px; font-style: italic; }
+.step-bar {
+  grid-column: 2 / 6;
+  height: 34px;
+  border-radius: 5px;
+  display: flex; align-items: center;
+  padding: 0 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700;
+  background: var(--off-white);
+  border: 1px solid var(--lt-gray);
+  transition: all 0.35s;
+  opacity: 0.4;
+}
+.step-bar.active { opacity: 1; }
+.step-bar.s1 { color: var(--pos-fg); border-left: 3px solid var(--pos-bd); }
+.step-bar.s2 { color: var(--red);    border-left: 3px solid var(--red); }
+.step-bar.s3 { color: var(--col-fg); border-left: 3px solid var(--col-bd); }
+.step-bar.s1.active { background: #EEF0FF; }
+.step-bar.s2.active { background: #FFF0F0; }
+.step-bar.s3.active { background: #FFF8EE; }
+
+/* ── ARROWS ── */
+.arr-spacer { height: 22px; }
+.arrow {
+  height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  transition: all 0.35s;
+  opacity: 0.15;
+}
+.arrow.show { opacity: 1; }
+.arrow.blue { color: var(--pos-bd); }
+.arrow.red  { color: var(--red); }
+.arrow.gold { color: var(--col-fg); }
+.arrow.dim  { color: var(--lt-gray); }
+
+/* ── OUTPUT NOTES ── */
+.out-note {
+  height: 44px;
+  display: flex; align-items: flex-start; justify-content: center;
+  text-align: center;
+  font-size: 10.5px;
+  padding-top: 5px;
+  line-height: 1.4;
+  opacity: 0; transition: opacity 0.4s;
+}
+.out-note.show { opacity: 1; }
+.out-note.load   { color: var(--red); font-weight: 700; }
+.out-note.done   { color: var(--empty-fg); font-style: italic; }
+.out-note.retry  { color: var(--col-fg); font-weight: 700; }
+.out-note.found  { color: var(--match-fg); font-weight: 700; }
+
+/* ── LEGEND ── */
+.legend {
+  display: flex; gap: 24px; justify-content: center;
+  padding: 10px 0 14px 0;
+  border-top: 1px solid var(--lt-gray);
+  background: #FAFAFA;
+}
+.legend-item { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--mid-gray); }
+.swatch { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; }
+
+/* ── CONTROLS ── */
+.controls {
+  background: var(--dk-gray);
+  padding: 10px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ctrl-btn {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--white);
+  font-size: 12px; font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Source Sans 3', sans-serif;
+  transition: background 0.2s;
+}
+.ctrl-btn:hover { background: rgba(255,255,255,0.2); }
+.ctrl-btn.primary { background: var(--red); border-color: var(--red); }
+.ctrl-btn.primary:hover { background: var(--dark-red); }
+
+.speed-label { color: rgba(255,255,255,0.5); font-size: 11px; }
+.step-counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+}
+</style>
+</head>
+<body>
+
+<div class="outer">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Vertical Vectorization &nbsp;—&nbsp; W = 4 slots</h1>
+    <div class="header-right">
+      <span class="iter-badge" id="iter-badge">ITER 1 / 6</span>
+    </div>
+  </div>
+
+  <!-- PROGRESS BAR -->
+  <div class="progress-row" id="progress-row">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- STEP PILLS -->
+  <div class="step-pills">
+    <span class="pill p1" id="pill-1">① compute positions</span>
+    <span class="pill p2" id="pill-2">② GATHER</span>
+    <span class="pill p3" id="pill-3">③ act on results</span>
+  </div>
+
+  <!-- DIAGRAM -->
+  <div class="diagram" id="diagram">
+
+    <!-- row 0: slot labels -->
+    <div></div>
+    <div class="slot-lbl">slot 0</div>
+    <div class="slot-lbl">slot 1</div>
+    <div class="slot-lbl">slot 2</div>
+    <div class="slot-lbl">slot 3</div>
+
+    <!-- row 1: keys[] -->
+    <div class="row-label">keys[ ]</div>
+    <div class="cell key show" id="k0"></div>
+    <div class="cell key show" id="k1"></div>
+    <div class="cell key show" id="k2"></div>
+    <div class="cell key show" id="k3"></div>
+
+    <!-- row 2: offsets[] -->
+    <div class="row-label">offsets[ ]</div>
+    <div class="cell off show" id="o0"></div>
+    <div class="cell off show" id="o1"></div>
+    <div class="cell off show" id="o2"></div>
+    <div class="cell off show" id="o3"></div>
+
+    <!-- row 3: offset notes -->
+    <div class="note-label"></div>
+    <div class="note-cell normal" id="on0"></div>
+    <div class="note-cell normal" id="on1"></div>
+    <div class="note-cell normal" id="on2"></div>
+    <div class="note-cell normal" id="on3"></div>
+
+    <!-- step 1 bar -->
+    <div class="step-spacer"></div>
+    <div class="step-bar s1" id="sb1">① &nbsp;pos[i] = hash(keys[i]) + offsets[i] &nbsp;—&nbsp; all 4 simultaneously</div>
+
+    <!-- arrows to pos -->
+    <div class="arr-spacer"></div>
+    <div class="arrow blue" id="pa0">↓</div>
+    <div class="arrow blue" id="pa1">↓</div>
+    <div class="arrow blue" id="pa2">↓</div>
+    <div class="arrow blue" id="pa3">↓</div>
+
+    <!-- pos[] -->
+    <div class="row-label">pos[ ]</div>
+    <div class="cell pos" id="p0"></div>
+    <div class="cell pos" id="p1"></div>
+    <div class="cell pos" id="p2"></div>
+    <div class="cell pos" id="p3"></div>
+
+    <!-- step 2 bar -->
+    <div class="step-spacer"></div>
+    <div class="step-bar s2" id="sb2">② &nbsp;GATHER — fetch 4 non-contiguous table entries in one instruction</div>
+
+    <!-- arrows to gathered -->
+    <div class="arr-spacer"></div>
+    <div class="arrow red" id="ga0">↓</div>
+    <div class="arrow red" id="ga1">↓</div>
+    <div class="arrow red" id="ga2">↓</div>
+    <div class="arrow red" id="ga3">↓</div>
+
+    <!-- gathered[] -->
+    <div class="row-label">gathered[ ]</div>
+    <div class="cell" id="g0"></div>
+    <div class="cell" id="g1"></div>
+    <div class="cell" id="g2"></div>
+    <div class="cell" id="g3"></div>
+
+    <!-- step 3 bar -->
+    <div class="step-spacer"></div>
+    <div class="step-bar s3" id="sb3">③ &nbsp;act on each result — all 4 simultaneously</div>
+
+    <!-- arrows to output -->
+    <div class="arr-spacer"></div>
+    <div class="arrow" id="oa0">↓</div>
+    <div class="arrow" id="oa1">↓</div>
+    <div class="arrow" id="oa2">↓</div>
+    <div class="arrow" id="oa3">↓</div>
+
+    <!-- output[] -->
+    <div class="row-label">output[ ]</div>
+    <div class="cell" id="out0"></div>
+    <div class="cell" id="out1"></div>
+    <div class="cell" id="out2"></div>
+    <div class="cell" id="out3"></div>
+
+    <!-- output notes -->
+    <div class="note-label"></div>
+    <div class="out-note" id="outn0"></div>
+    <div class="out-note" id="outn1"></div>
+    <div class="out-note" id="outn2"></div>
+    <div class="out-note" id="outn3"></div>
+
+  </div><!-- .diagram -->
+
+  <!-- LEGEND -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="swatch" style="background:var(--match-bg);border-color:var(--match-bd)"></div>Match
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:var(--empty-bg);border-color:var(--empty-bd)"></div>Empty (not found)
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:var(--col-bg);border-color:var(--col-bd)"></div>Collision — retry
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:var(--out-bg);border-color:var(--out-bd)"></div>Written to output
+    </div>
+    <div class="legend-item">
+      <div class="swatch" style="background:var(--car-bg);border-color:var(--car-bd)"></div>Carried from prev iteration
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div style="display:flex;gap:8px">
+      <button class="ctrl-btn" id="btn-prev">◀ Prev</button>
+      <button class="ctrl-btn primary" id="btn-play">⏸ Pause</button>
+      <button class="ctrl-btn" id="btn-next">Next ▶</button>
+    </div>
+    <span class="step-counter" id="step-counter"></span>
+    <span style="color:rgba(255,255,255,0.25);font-size:11px;font-family:'JetBrains Mono',monospace;">← → keys &nbsp;·&nbsp; space to pause</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="speed-label">Speed</span>
+      <button class="ctrl-btn" id="btn-slow">0.5×</button>
+      <button class="ctrl-btn" id="btn-normal">1×</button>
+      <button class="ctrl-btn" id="btn-fast">2×</button>
+    </div>
+  </div>
+
+</div><!-- .outer -->
+
+<script>
+// ─────────────────────────────────────────
+// DATA — 6 iterations
+// Each slot: { key, offset, pos, gathered:{type,val}, output:{type,val}, note }
+// carried: true if slot is mid-retry from prev iter
+// ─────────────────────────────────────────
+const ITERS = [
+  {
+    label: "All fresh keys",
+    slots: [
+      { key:"k=42", off:"+0", pos:"idx 7",  gtype:"mat", gval:"42 match ✓",  otype:"out",  oval:"write 42", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=17", off:"+0", pos:"idx 3",  gtype:"col", gval:"99 collide ✗",otype:"blank",oval:"—",         onote:{cls:"retry",txt:"offsets[1]+=1\nretry"},offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=88", off:"+0", pos:"idx 11", gtype:"mat", gval:"88 match ✓",  otype:"out",  oval:"write 88", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=5",  off:"+0", pos:"idx 2",  gtype:"emp", gval:"∅  empty",    otype:"blank",oval:"—",         onote:{cls:"done",txt:"mark done\n(not found)"},offnote:{cls:"normal",txt:"fresh"},carried:false },
+    ]
+  },
+  {
+    label: "Slot 1 retrying (offset+1)",
+    slots: [
+      { key:"k=31", off:"+0", pos:"idx 4",  gtype:"mat", gval:"31 match ✓",  otype:"out",  oval:"write 31", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=17", off:"+1", pos:"idx 4",  gtype:"col", gval:"55 collide ✗",otype:"blank",oval:"—",         onote:{cls:"retry",txt:"offsets[1]+=1\nretry"},offnote:{cls:"retry",txt:"1st retry"}, carried:true },
+      { key:"k=73", off:"+0", pos:"idx 6",  gtype:"mat", gval:"73 match ✓",  otype:"out",  oval:"write 73", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=64", off:"+0", pos:"idx 9",  gtype:"mat", gval:"64 match ✓",  otype:"out",  oval:"write 64", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+    ]
+  },
+  {
+    label: "Slot 1 retrying again (offset+2)",
+    slots: [
+      { key:"k=29", off:"+0", pos:"idx 1",  gtype:"emp", gval:"∅  empty",    otype:"blank",oval:"—",         onote:{cls:"done",txt:"mark done\n(not found)"},offnote:{cls:"normal",txt:"fresh"},carried:false },
+      { key:"k=17", off:"+2", pos:"idx 5",  gtype:"mat", gval:"17 match ✓",  otype:"out",  oval:"write 17", onote:{cls:"found",txt:"found!\nafter 3 tries"},offnote:{cls:"retry",txt:"2nd retry"}, carried:true },
+      { key:"k=50", off:"+0", pos:"idx 14", gtype:"col", gval:"77 collide ✗",otype:"blank",oval:"—",         onote:{cls:"retry",txt:"offsets[2]+=1\nretry"},offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=11", off:"+0", pos:"idx 8",  gtype:"mat", gval:"11 match ✓",  otype:"out",  oval:"write 11", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+    ]
+  },
+  {
+    label: "Slot 2 retrying — two collisions in play",
+    slots: [
+      { key:"k=97", off:"+0", pos:"idx 0",  gtype:"mat", gval:"97 match ✓",  otype:"out",  oval:"write 97", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=36", off:"+0", pos:"idx 13", gtype:"mat", gval:"36 match ✓",  otype:"out",  oval:"write 36", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=50", off:"+1", pos:"idx 15", gtype:"col", gval:"22 collide ✗",otype:"blank",oval:"—",         onote:{cls:"retry",txt:"offsets[2]+=1\nretry"},offnote:{cls:"retry",txt:"1st retry"}, carried:true },
+      { key:"k=83", off:"+0", pos:"idx 10", gtype:"emp", gval:"∅  empty",    otype:"blank",oval:"—",         onote:{cls:"done",txt:"mark done\n(not found)"},offnote:{cls:"normal",txt:"fresh"},carried:false },
+    ]
+  },
+  {
+    label: "Slot 2 still retrying (offset+2)",
+    slots: [
+      { key:"k=44", off:"+0", pos:"idx 7",  gtype:"mat", gval:"44 match ✓",  otype:"out",  oval:"write 44", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=20", off:"+0", pos:"idx 3",  gtype:"mat", gval:"20 match ✓",  otype:"out",  oval:"write 20", onote:{cls:"load",txt:"load next\nkey"},      offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=50", off:"+2", pos:"idx 16", gtype:"mat", gval:"50 match ✓",  otype:"out",  oval:"write 50", onote:{cls:"found",txt:"found!\nafter 3 tries"},offnote:{cls:"retry",txt:"2nd retry"}, carried:true },
+      { key:"k=67", off:"+0", pos:"idx 5",  gtype:"col", gval:"33 collide ✗",otype:"blank",oval:"—",         onote:{cls:"retry",txt:"offsets[3]+=1\nretry"},offnote:{cls:"normal",txt:"fresh"}, carried:false },
+    ]
+  },
+  {
+    label: "Clean sweep — all matches",
+    slots: [
+      { key:"k=91", off:"+0", pos:"idx 2",  gtype:"mat", gval:"91 match ✓",  otype:"out",  oval:"write 91", onote:{cls:"load",txt:"load next\nkey"},     offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=78", off:"+0", pos:"idx 12", gtype:"mat", gval:"78 match ✓",  otype:"out",  oval:"write 78", onote:{cls:"load",txt:"load next\nkey"},     offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=55", off:"+0", pos:"idx 9",  gtype:"mat", gval:"55 match ✓",  otype:"out",  oval:"write 55", onote:{cls:"load",txt:"load next\nkey"},     offnote:{cls:"normal",txt:"fresh"}, carried:false },
+      { key:"k=67", off:"+1", pos:"idx 6",  gtype:"mat", gval:"67 match ✓",  otype:"out",  oval:"write 67", onote:{cls:"found",txt:"found!\nafter 2 tries"},offnote:{cls:"retry",txt:"1st retry"}, carried:true },
+    ]
+  },
+];
+
+// ─────────────────────────────────────────
+// STATE MACHINE
+// Steps: 0=keys+offsets, 1=pos, 2=gathered, 3=output
+// ─────────────────────────────────────────
+let iterIdx = 0;
+let stepIdx = 0; // 0..3
+let playing = true;
+let speed = 1800; // ms per step
+let timer = null;
+
+const TOTAL_STEPS = ITERS.length * 4;
+
+function totalStep() { return iterIdx * 4 + stepIdx; }
+
+// ─────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────
+function render() {
+  const iter = ITERS[iterIdx];
+  const N = ITERS.length;
+
+  // badge
+  document.getElementById('iter-badge').textContent = `ITER ${iterIdx+1} / ${N}`;
+
+  // progress bar
+  const pr = document.getElementById('progress-row');
+  pr.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const d = document.createElement('div');
+    d.className = 'prog-step' + (i < iterIdx ? ' done' : i === iterIdx ? ' current' : '');
+    pr.appendChild(d);
+  }
+
+  // pills
+  document.getElementById('pill-1').classList.toggle('active', stepIdx >= 1);
+  document.getElementById('pill-2').classList.toggle('active', stepIdx >= 2);
+  document.getElementById('pill-3').classList.toggle('active', stepIdx >= 3);
+
+  // step counter
+  document.getElementById('step-counter').textContent =
+    `step ${totalStep()+1} / ${TOTAL_STEPS}  ·  "${iter.label}"`;
+
+  // step bars
+  document.getElementById('sb1').classList.toggle('active', stepIdx >= 1);
+  document.getElementById('sb2').classList.toggle('active', stepIdx >= 2);
+  document.getElementById('sb3').classList.toggle('active', stepIdx >= 3);
+
+  iter.slots.forEach((sl, i) => {
+    // keys
+    const kEl = document.getElementById(`k${i}`);
+    kEl.textContent = sl.key;
+    kEl.className = 'cell key show' + (sl.carried ? ' carried' : '');
+
+    // offsets
+    const oEl = document.getElementById(`o${i}`);
+    oEl.textContent = sl.off;
+    oEl.className = 'cell off show' + (sl.carried ? ' carried' : '');
+
+    // offset notes
+    const onEl = document.getElementById(`on${i}`);
+    onEl.textContent = sl.offnote.txt;
+    onEl.className = 'note-cell ' + sl.offnote.cls;
+
+    // pos row
+    const pEl = document.getElementById(`p${i}`);
+    pEl.textContent = stepIdx >= 1 ? sl.pos : '';
+    pEl.className = 'cell pos' + (stepIdx >= 1 ? ' show' : '') + (stepIdx >= 1 ? ' highlight' : '');
+    if (stepIdx > 1) pEl.classList.remove('highlight');
+
+    // arrows pos
+    document.getElementById(`pa${i}`).className = 'arrow blue' + (stepIdx >= 1 ? ' show' : '');
+
+    // gathered
+    const gEl = document.getElementById(`g${i}`);
+    if (stepIdx >= 2) {
+      gEl.textContent = sl.gval;
+      gEl.className = 'cell ' + sl.gtype + ' show' + (stepIdx === 2 ? ' highlight' : '');
+    } else {
+      gEl.textContent = '';
+      gEl.className = 'cell';
+    }
+
+    // arrows gather
+    document.getElementById(`ga${i}`).className = 'arrow red' + (stepIdx >= 2 ? ' show' : '');
+
+    // output
+    const outEl = document.getElementById(`out${i}`);
+    if (stepIdx >= 3) {
+      outEl.textContent = sl.oval;
+      outEl.className = 'cell ' + sl.otype + ' show';
+    } else {
+      outEl.textContent = '';
+      outEl.className = 'cell';
+    }
+
+    // output arrows
+    const oaEl = document.getElementById(`oa${i}`);
+    if (stepIdx >= 3) {
+      const cls = sl.otype === 'out' ? 'gold' : 'dim';
+      oaEl.className = `arrow ${cls} show`;
+    } else {
+      oaEl.className = 'arrow dim';
+    }
+
+    // output notes
+    const outnEl = document.getElementById(`outn${i}`);
+    if (stepIdx >= 3) {
+      outnEl.textContent = sl.onote.txt;
+      outnEl.className = 'out-note ' + sl.onote.cls + ' show';
+    } else {
+      outnEl.textContent = '';
+      outnEl.className = 'out-note';
+    }
+  });
+}
+
+// ─────────────────────────────────────────
+// ADVANCE
+// ─────────────────────────────────────────
+function advance() {
+  stepIdx++;
+  if (stepIdx > 3) {
+    stepIdx = 0;
+    iterIdx = (iterIdx + 1) % ITERS.length;
+  }
+  render();
+}
+
+function retreat() {
+  stepIdx--;
+  if (stepIdx < 0) {
+    iterIdx = (iterIdx - 1 + ITERS.length) % ITERS.length;
+    stepIdx = 3;
+  }
+  render();
+}
+
+function startTimer() {
+  clearInterval(timer);
+  timer = setInterval(advance, speed);
+}
+
+function stopTimer() { clearInterval(timer); timer = null; }
+
+// ─────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────
+document.getElementById('btn-play').addEventListener('click', () => {
+  playing = !playing;
+  document.getElementById('btn-play').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) startTimer(); else stopTimer();
+});
+document.getElementById('btn-next').addEventListener('click', () => { advance(); if (playing) startTimer(); });
+document.getElementById('btn-prev').addEventListener('click', () => { retreat(); if (playing) startTimer(); });
+
+function setSpeed(s) {
+  speed = s;
+  if (playing) startTimer();
+  ['btn-slow','btn-normal','btn-fast'].forEach(id =>
+    document.getElementById(id).classList.remove('primary'));
+}
+document.getElementById('btn-slow').addEventListener('click',   () => { setSpeed(3200); document.getElementById('btn-slow').classList.add('primary'); });
+document.getElementById('btn-normal').addEventListener('click', () => { setSpeed(1800); document.getElementById('btn-normal').classList.add('primary'); });
+document.getElementById('btn-fast').addEventListener('click',  () => { setSpeed(900);  document.getElementById('btn-fast').classList.add('primary'); });
+document.getElementById('btn-normal').classList.add('primary');
+
+// keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight') {
+    advance();
+    if (playing) startTimer();
+  } else if (e.key === 'ArrowLeft') {
+    retreat();
+    if (playing) startTimer();
+  } else if (e.key === ' ') {
+    e.preventDefault();
+    document.getElementById('btn-play').click();
+  }
+});
+
+// init
+render();
+startTimer();
+</script>
+</body>
+</html>
